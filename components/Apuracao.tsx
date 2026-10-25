@@ -196,6 +196,11 @@ export default function Apuracao() {
           {perm === "default" && (
             <button className="btn" type="button" onClick={askPermission}>Ativar avisos de virada</button>
           )}
+          {perm === "unsupported" && (
+            <small className="hint" style={{ maxWidth: 260, textAlign: "right" }}>
+              Este navegador não aceita notificações. No iPhone, toque em Compartilhar → Adicionar à Tela de Início e abra pelo ícone. Os avisos também aparecem nesta página.
+            </small>
+          )}
           {perm === "granted" && <small>Avisos de virada ativados</small>}
           {perm === "denied" && <small>Avisos bloqueados no navegador</small>}
         </div>
