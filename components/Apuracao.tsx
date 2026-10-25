@@ -49,6 +49,20 @@ export default function Apuracao() {
     try { setPerm(await Notification.requestPermission()); } catch { /* navegador bloqueou */ }
   }, []);
 
+  // Pede permissão ao abrir a página; se o navegador exigir um gesto, pede no primeiro toque ou tecla.
+  const autoAsked = useRef(false);
+  useEffect(() => {
+    if (perm !== "default") return;
+    if (!autoAsked.current) { autoAsked.current = true; askPermission(); }
+    const h = () => askPermission();
+    window.addEventListener("pointerdown", h, { once: true });
+    window.addEventListener("keydown", h, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", h);
+      window.removeEventListener("keydown", h);
+    };
+  }, [perm, askPermission]);
+
   // Dispara o aviso quando muda quem está na frente no total nacional.
   const checkLead = useCallback((br: UFData) => {
     if (br.l + br.f === 0 || br.l === br.f) return;
