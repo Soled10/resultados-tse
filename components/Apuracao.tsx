@@ -36,6 +36,37 @@ export default function Apuracao() {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const cursor = useRef(0);
+  const lastLeader = useRef<"l" | "f" | null>(null);
+  const [alerts, setAlerts] = useState<{ id: number; text: string; who: "l" | "f" }[]>([]);
+  const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
+
+  useEffect(() => {
+    setPerm(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+  }, []);
+
+  const askPermission = useCallback(async () => {
+    if (typeof Notification === "undefined") return;
+    try { setPerm(await Notification.requestPermission()); } catch { /* navegador bloqueou */ }
+  }, []);
+
+  // Dispara o aviso quando muda quem está na frente no total nacional.
+  const checkLead = useCallback((br: UFData) => {
+    if (br.l + br.f === 0 || br.l === br.f) return;
+    const leader: "l" | "f" = br.l > br.f ? "l" : "f";
+    const prev = lastLeader.current;
+    lastLeader.current = leader;
+    if (!prev || prev === leader) return;
+    const [pl, pf] = share(br.l, br.f);
+    const margin = Math.abs(pl - pf).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const [win, lose] = leader === "l" ? ["Lula", "Flávio Bolsonaro"] : ["Flávio Bolsonaro", "Lula"];
+    const text = `${win} acaba de passar ${lose} em ${margin}%`;
+    setAlerts((a) => [{ id: Date.now(), text, who: leader }, ...a].slice(0, 4));
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("Virada na apuração", { body: text, tag: "virada-" + Date.now() });
+      }
+    } catch { /* notificação indisponível neste aparelho */ }
+  }, []);
 
   // A cada 5 s: placar nacional + um grupo de estados em rodízio (todos os 28 arquivos em ~35 s).
   // "full" busca tudo de uma vez (primeira carga e botão "Atualizar agora").
@@ -47,6 +78,7 @@ export default function Apuracao() {
       const br = await getUF("br");
       setData((prev) => ({ at: new Date().toISOString(), uf: { ...prev.uf, br } }));
       setMode("live");
+      checkLead(br);
       const all = [...UFS, "zz"];
       let batch: string[];
       if (full) batch = all;
@@ -68,7 +100,7 @@ export default function Apuracao() {
       busyRef.current = false;
       if (full) setBusy(false);
     }
-  }, []);
+  }, [checkLead]);
 
   useEffect(() => {
     tick(true);
@@ -147,8 +179,24 @@ export default function Apuracao() {
           <small>
             {b ? `Totalização do TSE: ${b.dg} às ${b.hg} (Brasília)` : "—"}
           </small>
+          {perm === "default" && (
+            <button className="btn" type="button" onClick={askPermission}>Ativar avisos de virada</button>
+          )}
+          {perm === "granted" && <small>Avisos de virada ativados</small>}
+          {perm === "denied" && <small>Avisos bloqueados no navegador</small>}
         </div>
       </header>
+
+      {alerts.length > 0 && (
+        <div className="alerts" role="status" aria-live="polite">
+          {alerts.map((al) => (
+            <div key={al.id} className={`alert ${al.who === "l" ? "al" : "af"}`}>
+              <span><b>Virada:</b> {al.text}</span>
+              <button className="btn" type="button" onClick={() => setAlerts((x) => x.filter((y) => y.id !== al.id))}>Fechar</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {mode === "snap" && (
         <div className="notice">
