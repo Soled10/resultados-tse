@@ -1,7 +1,7 @@
 # Resultados TSE – 2º turno 2026
 
 Apuração do 2º turno presidencial (Lula × Flávio Bolsonaro) com mapa por estado e totais por região.
-Os números vêm dos arquivos oficiais do TSE e são atualizados no navegador a cada minuto.
+Os números vêm dos arquivos oficiais do TSE e são atualizados no navegador a cada 5 segundos.
 
 ```bash
 npm install

@@ -8,7 +8,8 @@ import { REG, UFREG, UFS, getUF, share, type Snapshot, type UFData } from "@/lib
 const fmt = (n: number) => n.toLocaleString("pt-BR");
 const pctf = (n: number) =>
   n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
-const INTERVAL_MS = 60_000;
+const INTERVAL_MS = 5_000;
+const PER_TICK = 4;
 
 type Mode = "load" | "live" | "snap" | "err";
 type SortKey = "n" | "reg" | "pl" | "pf" | "m" | "pst";
@@ -34,40 +35,48 @@ export default function Apuracao() {
   const [sort, setSort] = useState<{ k: SortKey; dir: 1 | -1 }>({ k: "m", dir: -1 });
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const cursor = useRef(0);
 
-  const cycle = useCallback(async () => {
+  // A cada 5 s: placar nacional + um grupo de estados em rodízio (todos os 28 arquivos em ~35 s).
+  // "full" busca tudo de uma vez (primeira carga e botão "Atualizar agora").
+  const tick = useCallback(async (full = false) => {
     if (busyRef.current) return;
     busyRef.current = true;
-    setBusy(true);
+    if (full) setBusy(true);
     try {
       const br = await getUF("br");
-      const uf: Record<string, UFData> = { br };
       setData((prev) => ({ at: new Date().toISOString(), uf: { ...prev.uf, br } }));
       setMode("live");
-      for (const u of [...UFS, "zz"]) {
-        try {
-          uf[u] = await getUF(u);
-        } catch {
-          /* estado sem arquivo ainda: mantém o último valor */
-        }
-        await new Promise((r) => setTimeout(r, 120));
+      const all = [...UFS, "zz"];
+      let batch: string[];
+      if (full) batch = all;
+      else {
+        batch = Array.from({ length: PER_TICK }, (_, i) => all[(cursor.current + i) % all.length]);
+        cursor.current = (cursor.current + PER_TICK) % all.length;
+      }
+      const uf: Record<string, UFData> = {};
+      for (let i = 0; i < batch.length; i += 6) {
+        const chunk = batch.slice(i, i + 6);
+        const res = await Promise.allSettled(chunk.map((u) => getUF(u)));
+        res.forEach((r, j) => { if (r.status === "fulfilled") uf[chunk[j]] = r.value; });
+        if (i + 6 < batch.length) await new Promise((r) => setTimeout(r, 400));
       }
       setData((prev) => ({ at: new Date().toISOString(), uf: { ...prev.uf, ...uf } }));
     } catch {
       setMode((m) => (m === "live" ? "live" : "snap"));
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      if (full) setBusy(false);
     }
   }, []);
 
   useEffect(() => {
-    cycle();
+    tick(true);
     const id = setInterval(() => {
-      if (!document.hidden) cycle();
+      if (!document.hidden) tick(false);
     }, INTERVAL_MS);
     return () => clearInterval(id);
-  }, [cycle]);
+  }, [tick]);
 
   const ufs = data.uf;
   const b = ufs.br;
@@ -143,7 +152,7 @@ export default function Apuracao() {
 
       {mode === "snap" && (
         <div className="notice">
-          <b>Não foi possível falar com o TSE agora.</b> Mostrando a última leitura salva. A página tenta de novo a cada minuto.
+          <b>Não foi possível falar com o TSE agora.</b> Mostrando a última leitura salva. A página tenta de novo a cada 5 segundos.
         </div>
       )}
 
@@ -324,7 +333,7 @@ export default function Apuracao() {
         <span>Fonte: <a href="https://resultados.tse.jus.br/oficial/app/index.html" target="_blank" rel="noopener">Tribunal Superior Eleitoral (TSE)</a>, divulgação oficial de resultados. Percentuais sobre votos válidos.</span>
         <span>Página independente, sem vínculo com o TSE ou com as campanhas. O resultado oficial é o divulgado pelo TSE.</span>
         <span>
-          <button className="btn" type="button" onClick={cycle} disabled={busy}>
+          <button className="btn" type="button" onClick={() => tick(true)} disabled={busy}>
             {busy ? "Atualizando…" : "Atualizar agora"}
           </button>
         </span>
